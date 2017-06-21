@@ -1,0 +1,219 @@
+---
+title: "Practical Machine Learning - Prediction Assignment Writeup"
+author: "YAG"
+date: "21/06/2017"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1. Synopsis
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. In this project, we use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+
+We aim to predict the manner in which the participants performed the exercise, which is stored in the  “classe” variable in the training set. We will try to predict the classe value (A, B, C, D, or E) for the 20 test cases and submit it in the quizz.
+
+## 2. Data Loading and Exploratory Analysis
+
+### 2.1. Data Loading
+
+We download the files and load them in R. 
+
+```{r download}
+setwd("~/Documents/R/MachineLearning")
+myUrl1 <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+myUrl2  <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+if(!file.exists("pml-traininig.csv"))
+{
+    download.file(myUrl1,destfile = "pml-traininig.csv")
+}
+if(!file.exists("pml-testing.csv"))
+{
+    download.file(TestUrl,destfile = "pml-testing.csv")
+}
+myTrainData  <- read.csv("pml-traininig.csv")
+myTestData  <- read.csv("pml-testing.csv")
+# dim(myTrainData)
+# dim(myTestData)
+```
+
+The datasets have 160 variables. Let’s clean NAs, Near Zero variance (NZV) variables and the first columns (used only for identification).
+
+```{r cleaning, warning=FALSE}
+library(caret)
+# sapply(myTrainData, function(x) mean(is.na(x)) ) 
+# we see many fields with more than 97% NAs
+myNAfields <- sapply(myTrainData, function(x) mean(is.na(x))) > 0.90
+# sum(myNAfields)
+# sapply(myTestData[,myNAfields], function(x) (mean(is.na(x))))
+# We see 67 fields with more than 90% of NAs, and none of them is used in our final test set!
+# Let's remove them
+myTrainData2 <- myTrainData[, !myNAfields]
+
+    
+myNZVfields <- nearZeroVar(myTrainData2)
+# length(nearZeroVar(myTrainSet2))
+# We see 34 fields with Nearly Zero Variance, we can remove them too.
+myTrainData2 <- myTrainData2[, -myNZVfields]
+
+# remove identification only variables (columns 1 to 5)
+myTrainData2 <- myTrainData2[, -(1:5)]
+dim(myTrainData2)
+```
+
+We will try to predict the 54th field on the basis of the 53 previous variables. Let's create a training partition.
+
+```{r partitioning}
+set.seed(1)
+# create a partition using caret with the training dataset on 70,30 ratio
+myTrainPartition  <- createDataPartition(myTrainData2$classe, p=0.7, list=FALSE)
+
+myTrainSet <- myTrainData2[myTrainPartition, ]
+myTestSet  <- myTrainData2[-myTrainPartition, ]
+``` 
+
+
+## 3. Prediction Model Building
+
+We will try Random Forests, Decision Tree and Gradient Boosted Machine with `myTrainSet` Then we'll select the best one based on accuracy when applied to  `myTestSet`. 
+
+### 3.1 Random Forests
+
+```{r randomforest, cache=TRUE, warning=FALSE}
+library(randomForest)
+set.seed(1)
+myRFsetting <- trainControl(method="cv", verboseIter=FALSE, number=5, repeats=2)
+myRFfit <- train(classe ~ ., data=myTrainSet, method="rf",
+                          trControl=myRFsetting)
+myRFfit
+myRFfit$finalModel
+```
+
+
+On myTestSet: 
+
+```{r randomforestpredict, warning=FALSE}
+set.seed(1)
+myRFpredict <- predict(myRFfit, newdata=myTestSet)
+confusionMatrix(myRFpredict, myTestSet$classe)
+```
+
+### 3.2. Decision Tree
+
+```{r decisiontrees, cache=TRUE}
+set.seed(1)
+library(rpart)
+library(rpart.plot)
+myDTfit <- rpart(classe ~ ., data=myTrainSet, method="class")
+printcp(myDTfit)
+plot(myDTfit)
+```
+
+```{r decisiontreespredict }
+myDTpredict <- predict(myDTfit, newdata=myTestSet, type="class")
+confusionMatrix(myDTpredict, myTestSet$classe)
+```
+
+### 3.3. Gradient Boosting Machine
+
+```{r gbm, cache=TRUE, warning=FALSE}
+set.seed(1)
+library(gbm)
+library(plyr)
+
+myGBMsetting <- trainControl(method = "repeatedcv", repeats = 2)
+myGBMfit  <- train(classe ~ ., data=myTrainSet, method = "gbm", 
+                   trControl = myGBMsetting, verbose = FALSE)
+myGBMfit$finalModel
+
+myGBMpredict <- predict(myGBMfit, newdata=myTestSet)
+confusionMatrix(myGBMpredict, myTestSet$classe)
+```
+
+## 4. Prediction on Test Data
+
+The accuracy of the 3 regression models are: 
+
+1. Random Forest : 0.9992 
+2. Decision Tree : 0.7393 
+3. GBM : 0.9883 
+
+So we'll be using the RF for the quizz prediction: 
+
+```{r final prediction}
+predict(myRFfit, newdata=myTestData)
+```
+
+[1] B A B A A E D B A A B C B A E E A B B B
+[1] B A B A A E D B A A B C B A E E A B B B
+[1] B A B A A E D B A A B C B A E E A B B B
+
+\pagebreak 
+
+# Appendix 
+
+## A1 Sources: 
+The training data for this project are available here: <https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv>
+
+The test data are available here: <https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv>
+
+More information here: <http://groupware.les.inf.puc-rio.br/har> (see Weight Lifting Exercise Dataset). This site includes the description of the 5 classes of exercises : 
+
+- exactly according to the specification (Class A), 
+- throwing the elbows to the front (Class B), 
+- lifting the dumbbell only halfway (Class C), 
+- lowering the dumbbell only halfway (Class D) and 
+- throwing the hips to the front (Class E).
+
+## A2. Correlations between predictors
+
+We looked at the correlations between the 53 predictors. As there are some significant correlations (in dark color) we could try to simplify the problem with a PCA, but for sake of time we skipped it and performed the trainig directly on the 53 variables. 
+
+```{r correlations}
+library(corrplot)
+
+myCorrelations <- cor(myTrainData2[, -54])
+corrplot(myCorrelations, order = "FPC",  type = "lower", tl.cex = 0.5, tl.col = rgb(0, 0, 0))
+```
+
+
+<!-- One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. -->
+
+<!-- Review criterialess  -->
+<!-- What you should submit -->
+
+<!-- The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases. -->
+
+<!-- Peer Review Portion -->
+
+<!-- Your submission for the Peer Review portion should consist of a link to a Github repo with your R markdown and compiled HTML file describing your analysis. Please constrain the text of the writeup to < 2000 words and the number of figures to be less than 5. It will make it easier for the graders if you submit a repo with a gh-pages branch so the HTML page can be viewed online (and you always want to make it easy on graders :-). -->
+
+<!-- Course Project Prediction Quiz Portion -->
+
+<!-- Apply your machine learning algorithm to the 20 test cases available in the test data above and submit your predictions in appropriate format to the Course Project Prediction Quiz for automated grading. -->
+
+<!-- Reproducibility -->
+
+<!-- Due to security concerns with the exchange of R code, your code will not be run during the evaluation by your classmates. Please be sure that if they download the repo, they will be able to view the compiled HTML version of your analysis. -->
+
+<!-- Prediction Assignment Writeupless  -->
+<!-- Background -->
+
+<!-- Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). -->
+
+<!-- Data -->
+
+<!-- The training data for this project are available here: -->
+
+<!-- https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv -->
+
+<!-- The test data are available here: -->
+
+<!-- https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv -->
+
+
+<!-- The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment. -->
