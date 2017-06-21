@@ -8,3 +8,7 @@ The files
 and
 `PML-CourseProject.Rmd`
 have identical content. One is in Rmarkdown, the other in html. 
+
+## for peer review: 
+As Github does not let you read the html file in the correct format, I uploaded the same file on Rpubs here: 
+<http://rpubs.com/yag/286593>
